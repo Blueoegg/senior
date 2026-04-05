@@ -94,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ext = ext.toLowerCase();
         if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) return 'image';
         if (['.mp4', '.webm', '.ogg'].includes(ext)) return 'video';
+        if (['.pdf'].includes(ext)) return 'pdf';
         return 'file';
     }
 
@@ -332,9 +333,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 let iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>`;
                 let previewBtnHTML = '';
-                if (file.type === 'image' || file.type === 'video') {
+                if (file.type === 'image' || file.type === 'video' || file.type === 'pdf') {
                     if (file.type === 'image') iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
                     if (file.type === 'video') iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>`;
+                    if (file.type === 'pdf') iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
                     previewBtnHTML = `<button class="action-btn preview-action" data-path="${file.path}" data-type="${file.type}">预览</button>`;
                 }
 
@@ -393,6 +395,15 @@ document.addEventListener('DOMContentLoaded', () => {
             video.controls = true;
             video.autoplay = true;
             previewContainer.appendChild(video);
+        } else if (type === 'pdf') {
+            const iframe = document.createElement('iframe');
+            iframe.src = path;
+            iframe.style.width = '100%';
+            iframe.style.height = '85vh';
+            iframe.style.border = 'none';
+            iframe.style.borderRadius = '8px';
+            iframe.style.backgroundColor = '#fff';
+            previewContainer.appendChild(iframe);
         }
         previewModal.classList.add('show');
     }
