@@ -14,13 +14,20 @@
         <div class="orb orb-3"></div>
     </div>
 
+    <!-- Admin Top Right Login -->
+    <div class="auth-bar">
+        <button id="admin-login-btn" class="auth-btn">🔑 站长登录</button>
+        <button id="admin-logout-btn" class="auth-btn" style="display: none; background: rgba(239,68,68,0.2); color: #ef4444; border-color: rgba(239,68,68,0.5);">🚪 退出</button>
+    </div>
+
     <main class="container">
         <header class="app-header">
             <h1>量子<span class="highlight">传输</span></h1>
-            <p>安全、快速地将您的文件发送到云端。</p>
+            <p id="app-subtitle">安全、快速地将您的文件发送到云端。</p>
         </header>
 
-        <section class="upload-section">
+        <!-- Upload Section (Hidden for normal users by default) -->
+        <section class="upload-section" id="upload-section" style="display: none;">
             <div id="drop-zone" class="drop-zone">
                 <div class="drop-zone-content">
                     <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -32,12 +39,21 @@
                     <input type="file" id="file-input" multiple hidden>
                 </div>
             </div>
+            
+            <!-- Uploading Queue (Current session uploads) -->
+            <div class="uploads-container" id="uploads-container">
+                <!-- New upload items will be inserted here temporarily -->
+            </div>
         </section>
         
-        <!-- Uploading Queue (Current session uploads) -->
-        <section class="uploads-container" id="uploads-container">
-            <!-- New upload items will be inserted here temporarily -->
-        </section>
+        <script>
+            // A small script to show the upload section only if a token is in localStorage before React/main logic boots up, to avoid flickering
+            if (localStorage.getItem('QD_GITHUB_TOKEN')) {
+                document.getElementById('upload-section').style.display = 'block';
+            } else {
+                document.getElementById('app-subtitle').textContent = '世界上最优雅的云端文件保险箱。';
+            }
+        </script>
 
         <!-- Past Files Vault -->
         <section class="vault-section" id="vault-section">
@@ -62,6 +78,19 @@
         <div class="modal-content">
             <span class="close-modal">&times;</span>
             <div id="preview-container"></div>
+        </div>
+    </div>
+
+    <!-- Login/Settings Modal -->
+    <div id="login-modal" class="modal">
+        <div class="login-card">
+            <h3>站长权限验证</h3>
+            <p>请输入您的 GitHub Personal Access Token 以解锁上传与删除功能。您的密钥将以极高安全性存储在您当前浏览器的本地缓存中（LocalStorage），不会发送给任何服务器。</p>
+            <input type="password" id="token-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxx" />
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button id="save-token-btn" class="browse-btn" style="flex: 1;">保存并验证</button>
+                <button id="cancel-token-btn" class="refresh-btn" style="flex: 1; justify-content: center;">取消</button>
+            </div>
         </div>
     </div>
 
