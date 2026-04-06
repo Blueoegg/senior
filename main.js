@@ -602,7 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${comment ? `<div class="annotation-row"><span class="annotation-text">📝 ${comment}</span></div>` : ''}
                 </div>
                 <div class="vault-actions" style="margin-top:0.25rem;">
-                    <button class="fav-btn" onclick="cycleTrafficLight('${file.sha}')" title="错题标记(红/黄/绿)">${trafficIconMap[trafficLevel]}</button>
+                    <button class="traffic-btn" onclick="cycleTrafficLight('${file.sha}')" title="错题标记(红/黄/绿)">${trafficIconMap[trafficLevel]}</button>
                     <button class="action-btn comment-btn" onclick="promptComment('${file.sha}')" title="编辑学习批注">💬</button>
                     ${previewBtnHTML}
                     <a href="${cdnUrl}" target="_blank" download="${displayName}" class="action-btn">下载</a>
@@ -646,16 +646,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (type === 'image') {
             const img = document.createElement('img');
-            img.src = path;
-            previewContainer.appendChild(img);
-        } else if (type === 'video') {
-            const video = document.createElement('video');
-            video.src = path;
-            video.controls = true;
-            previewContainer.appendChild(video);
-        } else if (type === 'pdf') {
-            previewContainer.innerHTML = '<div id="pdf-viewer" style="width: 100%; height: 100%; overflow-y: auto; text-align: center; background: #333; border-radius: 8px; padding: 10px; box-sizing: border-box; -webkit-overflow-scrolling: touch;"></div>';
-            // ... (rest loaded below)
             img.src = path;
             previewContainer.appendChild(img);
         } else if (type === 'video') {
