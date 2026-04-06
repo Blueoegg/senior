@@ -396,16 +396,67 @@ document.addEventListener('DOMContentLoaded', () => {
             video.autoplay = true;
             previewContainer.appendChild(video);
         } else if (type === 'pdf') {
-            const iframe = document.createElement('iframe');
-            iframe.src = path;
-            iframe.style.width = '100%';
-            iframe.style.height = '85vh';
-            iframe.style.border = 'none';
-            iframe.style.borderRadius = '8px';
-            iframe.style.backgroundColor = '#fff';
-            previewContainer.appendChild(iframe);
+            previewContainer.innerHTML = '<div id="pdf-viewer" style="width: 100%; height: 100%; overflow-y: auto; text-align: center; background: #333; border-radius: 8px; padding: 10px; box-sizing: border-box; -webkit-overflow-scrolling: touch;"></div>';
+            const pdfViewer = document.getElementById('pdf-viewer');
+            pdfViewer.innerHTML = '<p style="color: white; margin-top: 2rem;">正在加载 PDF 引擎...</p>';
+
+            if (typeof pdfjsLib === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+                script.onload = () => {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+                    renderPDF(path, pdfViewer);
+                };
+                script.onerror = () => { pdfViewer.innerHTML = '<p style="color: #ffbaba; margin-top: 2rem;">PDF 引擎加载失败，请检查网络</p>'; };
+                document.head.appendChild(script);
+            } else {
+                renderPDF(path, pdfViewer);
+            }
         }
         previewModal.classList.add('show');
+    }
+
+    function renderPDF(path, container) {
+        container.innerHTML = '<p style="color: white; margin-top: 2rem;">正在解析 PDF 数据...</p>';
+        const loadingTask = pdfjsLib.getDocument(path);
+        loadingTask.promise.then(async pdf => {
+            container.innerHTML = '';
+            for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const isMobile = window.innerWidth <= 768;
+                // dynamic scaling to fit container
+                const unscaledViewport = page.getViewport({ scale: 1.0 });
+                // Account for scrollbar width and padding
+                const desiredWidth = container.clientWidth - (isMobile ? 24 : 40);
+                const scale = desiredWidth / unscaledViewport.width;
+                // Limit scale up on very wide screens so it doesn't get ridiculously large
+                const finalScale = Math.min(scale, 1.5); 
+                
+                const viewport = page.getViewport({ scale: finalScale });
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                canvas.style.maxWidth = '100%';
+                canvas.style.height = 'auto';
+                canvas.style.display = 'block';
+                canvas.style.margin = '0 auto 15px auto';
+                canvas.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+                canvas.style.backgroundColor = '#fff';
+                canvas.style.borderRadius = '4px';
+                
+                container.appendChild(canvas);
+                
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                await page.render(renderContext).promise;
+            }
+        }).catch(err => {
+            container.innerHTML = `<p style="color: #ffbaba; margin-top: 2rem;">文件加载或渲染失败: ${err.message}</p>`;
+        });
     }
 
     closeModal.addEventListener('click', () => { previewModal.classList.remove('show'); previewContainer.innerHTML = ''; });
