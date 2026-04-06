@@ -155,17 +155,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateAuthUI() {
         const token = getToken();
         if (token) {
-            uploadSection.style.display = 'block';
-            adminLoginBtn.style.display = 'none';
-            adminLogoutBtn.style.display = 'block';
-            appSubtitle.textContent = '安全、快速地将您的文件发送到云端。';
+            if(uploadSection) uploadSection.style.display = 'block';
+            if(adminLoginBtn) adminLoginBtn.style.display = 'none';
+            if(adminLogoutBtn) adminLogoutBtn.style.display = 'block';
+            if(appSubtitle) appSubtitle.textContent = '安全、快速地将您的资料同步到云端。';
         } else {
-            uploadSection.style.display = 'none';
-            adminLoginBtn.style.display = 'block';
-            adminLogoutBtn.style.display = 'none';
-            appSubtitle.textContent = '世界上最优雅的云端文件保险箱。';
+            if(uploadSection) uploadSection.style.display = 'none';
+            if(adminLoginBtn) adminLoginBtn.style.display = 'block';
+            if(adminLogoutBtn) adminLogoutBtn.style.display = 'none';
+            if(appSubtitle) appSubtitle.textContent = '高中资料共享 - 专注学习的高效书库。';
         }
-        fetchFiles(); // Re-fetch to show/hide delete buttons
+        fetchFiles(); 
     }
 
     // Modal listeners
@@ -315,33 +315,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Fetch Logic ---
-    window.fetchFiles = async function() {
+    async function fetchFiles() {
+        if(!refreshBtn) return;
         refreshBtn.style.opacity = '0.5';
         try {
+            // Try default branch first, handle potential 404 for master/main differences
             const url = `${GITHUB_API_URL}/git/trees/${DEFAULT_BRANCH}?recursive=1`;
             const res = await fetch(url, { headers: getHeaders() });
             
+            if (res.status === 401 || res.status === 403) {
+                 const err = await res.json();
+                 if (!getToken()) {
+                    throw new Error('此仓库可能为私有，访客无权查看。请站长登录后或将仓库设为公开。');
+                 }
+                 throw new Error(err.message || 'GitHub API 访问被拒绝');
+            }
+
             if (res.status === 404 || res.status === 409) {
                fullTreeData = [];
                renderVault();
                return;
             }
 
-            if (!res.ok) throw new Error('拉取失败');
+            if (!res.ok) throw new Error('拉取数据失败');
             const data = await res.json();
             
             // Only keep items inside 'uploads/'
-            fullTreeData = data.tree.filter(item => item.path.startsWith('uploads/'));
+            fullTreeData = data.tree ? data.tree.filter(item => item.path.startsWith('uploads/')) : [];
             renderVault();
             updatePathBreadcrumb();
 
         } catch (error) {
             console.error('Fetch error:', error);
-            vaultContent.innerHTML = `<p style="text-align:center;color:var(--error);">无法连接到 GitHub (${error.message})</p>`;
+            vaultContent.innerHTML = `<div style="text-align:center; padding: 2rem; color: var(--error);">
+                <p>⚠️ ${error.message}</p>
+                <p style="font-size: 0.8rem; margin-top: 1rem; color: var(--text-secondary);">提示：如果是权限问题，请在设置中保存有效的 Token。</p>
+            </div>`;
         } finally {
             refreshBtn.style.opacity = '1';
         }
     }
+    window.fetchFiles = fetchFiles; // Expose globally for metadata toggles
 
     // --- Delete File Logic ---
     async function deleteFile(path, sha) {
@@ -660,4 +674,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     closeModal.addEventListener('click', () => { previewModal.classList.remove('show'); previewContainer.innerHTML = ''; });
     window.addEventListener('click', (e) => { if (e.target === previewModal) { previewModal.classList.remove('show'); previewContainer.innerHTML = ''; } });
+
+    // --- Final Execution ---
+    init();
 });
