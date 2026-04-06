@@ -248,18 +248,53 @@ document.addEventListener('DOMContentLoaded', () => {
         dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-active'), false);
     });
 
-    dropZone.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files), false);
-    fileInput.addEventListener('change', function() { handleFiles(this.files); });
+    // We remove the old one: dropZone.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files), false);
+    dropZone.addEventListener('drop', (e) => {
+        preventDefaults(e);
+        if(!getToken()) return;
+        
+        let items = e.dataTransfer.items;
+        if(items) {
+            for (let i = 0; i < items.length; i++) {
+                let item = items[i].webkitGetAsEntry();
+                if(item) traverseFileTree(item, currentPath);
+            }
+        } else {
+            ([...e.dataTransfer.files]).forEach(f => uploadFile(f, null));
+        }
+    }, false);
+
+    fileInput.addEventListener('change', function() {
+        if(!getToken()) return;
+        ([...this.files]).forEach(f => uploadFile(f, null));
+    });
 
     function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
 
-    function handleFiles(files) {
-        if(!getToken()) return; // Failsafe
-        ([...files]).forEach(uploadFile);
+    function traverseFileTree(item, currentPrefix) {
+        if (item.isFile) {
+            item.file((file) => {
+                 let relativePath = item.fullPath; 
+                 if(relativePath.startsWith('/')) relativePath = relativePath.substring(1);
+                 uploadFile(file, relativePath);
+            });
+        } else if (item.isDirectory) {
+            let dirReader = item.createReader();
+            let readEntries = () => {
+                 dirReader.readEntries((entries) => {
+                     if(entries.length === 0) return;
+                     for(let i = 0; i < entries.length; i++) {
+                         traverseFileTree(entries[i], currentPrefix);
+                     }
+                     readEntries(); // Keep reading if there are >100 entries.
+                 });
+            };
+            readEntries();
+        }
     }
 
     // --- Upload File Logic ---
-    async function uploadFile(file) {
+    async function uploadFile(file, relativePath = null) {
         const fileId = 'file-' + Math.random().toString(36).substr(2, 9);
         const fileItem = document.createElement('div');
         fileItem.className = 'upload-item';
@@ -276,12 +311,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const timestamp = Date.now();
-            let rawBaseName = file.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5.\-_]/g, '_');
-            const newFilename = `${timestamp}-${rawBaseName}`;
+            let finalGitPath;
+
+            if (relativePath) {
+                // Determine base dir structure
+                const parts = relativePath.split('/');
+                const originalName = parts.pop(); // the file name itself
+                const safeName = originalName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5.\-_]/g, '_');
+                const baseDir = parts.length > 0 ? parts.join('/') + '/' : '';
+                const finalFilename = `${timestamp}-${safeName}`;
+                finalGitPath = `${currentPath}${baseDir}${finalFilename}`;
+            } else {
+                let rawBaseName = file.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5.\-_]/g, '_');
+                const newFilename = `${timestamp}-${rawBaseName}`;
+                finalGitPath = `${currentPath}${newFilename}`;
+            }
             
             const base64Content = await fileToBase64(file);
-            const gitPath = `${currentPath}${newFilename}`;
-            const putUrl = `${GITHUB_API_URL}/contents/${encodeURI(gitPath)}`;
+            const putUrl = `${GITHUB_API_URL}/contents/${encodeURI(finalGitPath)}`;
             
             const res = await fetch(putUrl, {
                 method: 'PUT',
@@ -677,4 +724,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Final Execution ---
     init();
+
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').then(reg => {
+                console.log('ServiceWorker registered with scope:', reg.scope);
+            }).catch(err => {
+                console.log('ServiceWorker registration failed:', err);
+            });
+        });
+    }
 });

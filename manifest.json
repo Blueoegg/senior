@@ -1,0 +1,17 @@
+{
+  "name": "高中资料共享",
+  "short_name": "高中资料",
+  "description": "极简主义、高效的高中学习资料库。",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#161b22",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
