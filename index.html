@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>量子传输 | 高级文件共享</title>
+    <title>高中资料共享 | 专注学习的高质云盘</title>
     <!-- Removed Google Fonts for China accessibility, using system native fonts in CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
@@ -14,26 +14,37 @@
         <div class="orb orb-3"></div>
     </div>
 
-    <!-- Admin Top Right Login -->
-    <div class="auth-bar">
-        <button id="admin-login-btn" class="auth-btn">🔑 站长登录</button>
-        <button id="admin-logout-btn" class="auth-btn" style="display: none; background: rgba(239,68,68,0.2); color: #ef4444; border-color: rgba(239,68,68,0.5);">🚪 退出</button>
+    <!-- Top Navigation Bar -->
+    <div class="top-nav-bar">
+        <div class="search-container">
+            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" id="search-input" placeholder="搜索资料...">
+        </div>
+        <button id="theme-toggle-btn" class="nav-btn" title="切换日/夜模式">🌙</button>
+        <button id="admin-login-btn" class="nav-btn auth-btn">🔑</button>
+        <button id="admin-logout-btn" class="nav-btn auth-btn text-danger" style="display: none;" title="退出站长身份">🚪</button>
     </div>
 
     <main class="container">
         <header class="app-header">
-            <h1>量子<span class="highlight">传输</span></h1>
-            <p id="app-subtitle">安全、快速地将您的文件发送到云端。</p>
+            <h1 class="logo-title">高中资料<span class="highlight">共享</span></h1>
+            <p id="app-subtitle">您的高效学习专区与私密资料保险箱。</p>
         </header>
 
         <!-- Upload Section (Hidden for normal users by default) -->
         <section class="upload-section" id="upload-section" style="display: none;">
+            <!-- Current Path Indicator & New Folder -->
+            <div class="path-controls-container">
+                <div class="path-breadcrumb" id="current-path-display">当前路径: /根目录</div>
+                <button id="new-folder-btn" class="action-btn new-folder-btn">+ 新建文件夹</button>
+            </div>
+
             <div id="drop-zone" class="drop-zone">
                 <div class="drop-zone-content">
                     <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <p class="drop-text">将文件拖拽至此处</p>
+                    <p class="drop-text">将文件拖拽至此处上传到当前目录</p>
                     <p class="sub-text">或</p>
                     <label for="file-input" class="browse-btn">浏览文件</label>
                     <input type="file" id="file-input" multiple hidden>
@@ -51,21 +62,27 @@
             if (localStorage.getItem('QD_GITHUB_TOKEN')) {
                 document.getElementById('upload-section').style.display = 'block';
             } else {
-                document.getElementById('app-subtitle').textContent = '世界上最优雅的云端文件保险箱。';
+                document.getElementById('app-subtitle').textContent = '你身边最轻盈的随身书库。';
             }
         </script>
 
         <!-- Past Files Vault -->
         <section class="vault-section" id="vault-section">
             <div class="vault-header">
-                <h2>文件保险箱</h2>
-                <button id="refresh-btn" class="refresh-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
-                    刷新
-                </button>
+                <h2 id="vault-title" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                    <span>所有资料</span>
+                </h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <!-- Filter for Favorites inside the vault toolbar -->
+                    <button id="toggle-favorites-btn" class="nav-btn" style="font-size: 0.9rem;" title="只看收藏">⭐</button>
+                    <button id="refresh-btn" class="nav-btn refresh-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div id="vault-content" class="vault-content">
                 <p style="text-align: center; color: var(--text-secondary);">加载中...</p>

@@ -21,10 +21,122 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeModal = document.querySelector('.close-modal');
     const previewContainer = document.getElementById('preview-container');
 
+    // New Nav Elements
+    const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    const searchInput = document.getElementById('search-input');
+    const currentPathDisplay = document.getElementById('current-path-display');
+    const newFolderBtn = document.getElementById('new-folder-btn');
+    const toggleFavoritesBtn = document.getElementById('toggle-favorites-btn');
+
     // GitHub Config Defaults
     const GITHUB_OWNER = 'Blueoegg';
     const GITHUB_REPO = 'senior';
-    const REPO_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/uploads`;
+    const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}`;
+    const DEFAULT_BRANCH = 'main';
+
+    // State
+    let fullTreeData = [];
+    let currentPath = 'uploads/'; // Root folder for files
+    let isShowFavoritesOnly = false;
+    let searchQuery = '';
+
+    // --- Theme & Metadata Logic ---
+    const savedTheme = localStorage.getItem('QD_THEME') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    if(themeToggleBtn) themeToggleBtn.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+
+    if(themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+            const curr = document.documentElement.getAttribute('data-theme');
+            const next = curr === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('QD_THEME', next);
+            themeToggleBtn.textContent = next === 'dark' ? '☀️' : '🌙';
+        });
+    }
+
+    function getMeta() {
+        try { return JSON.parse(localStorage.getItem('QD_FILE_META') || '{}'); } catch { return {}; }
+    }
+    function updateMeta(sha, updates) {
+        const meta = getMeta();
+        if(!meta[sha]) meta[sha] = {};
+        Object.assign(meta[sha], updates);
+        localStorage.setItem('QD_FILE_META', JSON.stringify(meta));
+    }
+    window.toggleFav = function(sha) {
+        const meta = getMeta();
+        const isFav = meta[sha]?.isFav || false;
+        updateMeta(sha, { isFav: !isFav });
+        renderVault();
+    }
+    window.promptComment = function(sha) {
+        const meta = getMeta();
+        const existing = meta[sha]?.comment || '';
+        const input = prompt('输入您的学习批注 (清空则删除):', existing);
+        if(input !== null) {
+            updateMeta(sha, { comment: input.trim() });
+            renderVault();
+        }
+    }
+
+    if(searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            searchQuery = e.target.value.toLowerCase().trim();
+            renderVault();
+        });
+    }
+
+    if(toggleFavoritesBtn) {
+        toggleFavoritesBtn.addEventListener('click', () => {
+            isShowFavoritesOnly = !isShowFavoritesOnly;
+            toggleFavoritesBtn.style.opacity = isShowFavoritesOnly ? '1' : '0.5';
+            toggleFavoritesBtn.style.filter = isShowFavoritesOnly ? 'grayscale(0)' : 'grayscale(1)';
+            renderVault();
+        });
+    }
+
+    function updatePathBreadcrumb() {
+        if(currentPathDisplay) {
+            const displayPath = currentPath === 'uploads/' ? '/根目录' : '/根目录/' + currentPath.substring(8);
+            currentPathDisplay.textContent = '当前路径: ' + displayPath;
+        }
+    }
+
+    const vaultTitle = document.getElementById('vault-title');
+    if(vaultTitle) {
+        vaultTitle.addEventListener('click', () => {
+            currentPath = 'uploads/';
+            searchQuery = '';
+            if(searchInput) searchInput.value = '';
+            isShowFavoritesOnly = false;
+            if(toggleFavoritesBtn) {
+                toggleFavoritesBtn.style.opacity = '0.5';
+                toggleFavoritesBtn.style.filter = 'grayscale(1)';
+            }
+            updatePathBreadcrumb();
+            renderVault();
+        });
+    }
+
+    if(newFolderBtn) {
+        newFolderBtn.addEventListener('click', async () => {
+            const fname = prompt('请输入新文件夹名称：');
+            if(!fname) return;
+            const safeName = fname.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_\- ]/g, '_');
+            const newPath = currentPath + safeName + '/.gitkeep';
+            try {
+                newFolderBtn.textContent = '创建中...';
+                await fetch(`${GITHUB_API_URL}/contents/${encodeURI(newPath)}`, {
+                    method: 'PUT',
+                    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: `Create folder ${safeName}`, content: btoa('hidden') })
+                });
+                fetchFiles();
+            } catch(e) { alert('创建文件夹失败'); }
+            finally { newFolderBtn.textContent = '+ 新建文件夹'; }
+        });
+    }
 
     // --- Authentication Logic ---
     function getToken() {
@@ -116,9 +228,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 
-    // Initialization
-    updateAuthUI();
-    refreshBtn.addEventListener('click', fetchFiles);
+    // Initialization (Moved to end)
+    function init() {
+        updateAuthUI();
+        if(refreshBtn) refreshBtn.addEventListener('click', () => fetchFiles());
+    }
 
     // --- Drag and Drop Logic --- // Only works if upload section is visible
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -166,13 +280,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const newFilename = `${timestamp}-${rawBaseName}`;
             
             const base64Content = await fileToBase64(file);
-            const putUrl = `${REPO_API_URL}/${encodeURIComponent(newFilename)}`;
+            const gitPath = `${currentPath}${newFilename}`;
+            const putUrl = `${GITHUB_API_URL}/contents/${encodeURI(gitPath)}`;
             
             const res = await fetch(putUrl, {
                 method: 'PUT',
                 headers: { ...getHeaders(), 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: `Upload ${file.name} via QuantumDrop Frontend`,
+                    message: `Upload ${file.name} to ${currentPath}`,
                     content: base64Content
                 })
             });
@@ -200,73 +315,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Fetch Logic ---
-    async function fetchFiles() {
+    window.fetchFiles = async function() {
         refreshBtn.style.opacity = '0.5';
         try {
-            const res = await fetch(REPO_API_URL, { headers: getHeaders() });
+            const url = `${GITHUB_API_URL}/git/trees/${DEFAULT_BRANCH}?recursive=1`;
+            const res = await fetch(url, { headers: getHeaders() });
             
-            if (res.status === 404) {
-               renderVault([]);
+            if (res.status === 404 || res.status === 409) {
+               fullTreeData = [];
+               renderVault();
                return;
             }
 
             if (!res.ok) throw new Error('拉取失败');
             const data = await res.json();
             
-            const fileRecords = data
-                .filter(item => item.type === 'file')
-                .map(item => {
-                    const parts = item.name.split('-');
-                    let timeMs = 0;
-                    let displayName = item.name;
-                    
-                    if (parts.length > 1 && !isNaN(parts[0]) && parts[0].length === 13) {
-                        timeMs = parseInt(parts[0]);
-                        displayName = parts.slice(1).join('-'); 
-                    }
-
-                    const ext = displayName.substring(displayName.lastIndexOf('.'));
-                    const cdnUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO}/${item.path}`;
-
-                    return {
-                        name: displayName,
-                        pathName: item.name, 
-                        sha: item.sha, // Required for deletion!
-                        size: item.size,
-                        timeMs: timeMs,
-                        path: cdnUrl,
-                        type: getFileType(ext)
-                    };
-                });
-
-            fileRecords.sort((a, b) => b.timeMs - a.timeMs);
-
-            const grouped = [];
-            let currentGroup = null;
-            const now = new Date();
-            const todayStr = now.toDateString();
-            const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-            const yesterdayStr = yesterday.toDateString();
-
-            fileRecords.forEach(file => {
-                let groupLabel = '早期文件';
-                if (file.timeMs > 0) {
-                    const fileDate = new Date(file.timeMs);
-                    const fileDateStr = fileDate.toDateString();
-                    if (fileDateStr === todayStr) groupLabel = '今天';
-                    else if (fileDateStr === yesterdayStr) groupLabel = '昨天';
-                    else groupLabel = `${fileDate.getFullYear()}年${fileDate.getMonth() + 1}月${fileDate.getDate()}日`;
-                }
-
-                if (!currentGroup || currentGroup.label !== groupLabel) {
-                    currentGroup = { label: groupLabel, files: [] };
-                    grouped.push(currentGroup);
-                }
-
-                currentGroup.files.push(file);
-            });
-
-            renderVault(grouped);
+            // Only keep items inside 'uploads/'
+            fullTreeData = data.tree.filter(item => item.path.startsWith('uploads/'));
+            renderVault();
+            updatePathBreadcrumb();
 
         } catch (error) {
             console.error('Fetch error:', error);
@@ -277,18 +344,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Delete File Logic ---
-    async function deleteFile(fileName, sha) {
-        if(!confirm(`确定要永久删除 ${fileName} 吗？\n删除后不可恢复！`)) return;
+    async function deleteFile(path, sha) {
+        if(!confirm(`确定要永久删除 ${path} 吗？\n删除后不可恢复！`)) return;
 
         const originalText = vaultContent.innerHTML;
         vaultContent.innerHTML = '<p style="text-align:center; color: var(--accent-1);">正在删除 (Deleting)...</p>';
 
         try {
-            const res = await fetch(`${REPO_API_URL}/${fileName}`, {
+            const res = await fetch(`${GITHUB_API_URL}/contents/${encodeURI(path)}`, {
                 method: 'DELETE',
                 headers: { ...getHeaders(), 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: `Delete ${fileName} via QuantumDrop Frontend`,
+                    message: `Delete ${path}`,
                     sha: sha
                 })
             });
@@ -298,70 +365,193 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(err.message || '删除失败');
             }
 
-            // Target branch might be different but usually default works.
             fetchFiles(); // Re-pull data
 
         } catch(e) {
             console.error(e);
             alert('删除失败: ' + e.message);
             vaultContent.innerHTML = originalText;
-            attachVaultListeners(); // re-attach listeners because we restored innerHTML
+            attachVaultListeners();
+        }
+    }
+
+    async function deleteFolder(folderPath) {
+        // Collect all files under this folder prefix
+        const targets = fullTreeData.filter(item => item.type === 'blob' && item.path.startsWith(folderPath));
+        if(targets.length === 0) return;
+        
+        vaultContent.innerHTML = '<p style="text-align:center; color: var(--accent-1);">正在批量删除目录内容 (Deleting directory)...</p>';
+        try {
+            // Sequential deletion (GitHub might rate limit if doing complex parallel deletes on same branch)
+            for(let file of targets) {
+                const r = await fetch(`${GITHUB_API_URL}/contents/${encodeURI(file.path)}`, {
+                    method: 'DELETE',
+                    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: `Delete ${file.path}`, sha: file.sha })
+                });
+                if(!r.ok) console.error("Failed to delete", file.path);
+            }
+            fetchFiles();
+        } catch(e) {
+            alert('批量删除可能未完全成功: ' + e.message);
+            fetchFiles();
         }
     }
 
     // --- Render Vault ---
-    function renderVault(groupedFiles) {
-        if (!groupedFiles || groupedFiles.length === 0) {
-            vaultContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无文件，极度空虚！</p>';
-            return;
-        }
-
+    window.renderVault = function() {
         vaultContent.innerHTML = '';
         const hasToken = !!getToken();
+        const meta = getMeta();
         
-        groupedFiles.forEach(group => {
-            const groupDiv = document.createElement('div');
-            groupDiv.className = 'date-group';
-            groupDiv.innerHTML = `<div class="date-group-title">${group.label}</div>`;
-
-            const listDiv = document.createElement('div');
-            listDiv.className = 'vault-list';
-
-            group.files.forEach(file => {
-                const itemDiv = document.createElement('div');
-                itemDiv.className = 'vault-item';
+        let displayItems = [];
+        
+        if (searchQuery) {
+            displayItems = fullTreeData.filter(item => {
+                if(item.type !== 'blob') return false; 
+                // Don't show .gitkeep
+                if(item.path.endsWith('.gitkeep')) return false;
+                const pathParts = item.path.split('/');
+                const filename = pathParts[pathParts.length - 1].toLowerCase();
                 
-                let iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>`;
-                let previewBtnHTML = '';
-                if (file.type === 'image' || file.type === 'video' || file.type === 'pdf') {
-                    if (file.type === 'image') iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
-                    if (file.type === 'video') iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>`;
-                    if (file.type === 'pdf') iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
-                    previewBtnHTML = `<button class="action-btn preview-action" data-path="${file.path}" data-type="${file.type}">预览</button>`;
-                }
-
-                // If admin, show delete button
-                const deleteBtnHTML = hasToken ? `<button class="action-btn delete-btn" data-filename="${file.pathName}" data-sha="${file.sha}">删除</button>` : '';
-
-                itemDiv.innerHTML = `
-                    <div class="file-icon">${iconSvg}</div>
-                    <div class="file-info">
-                        <div class="file-name" title="${file.name}">${file.name}</div>
-                        <div class="file-meta-row">${formatBytes(file.size)}</div>
-                    </div>
-                    <div class="vault-actions">
-                        ${previewBtnHTML}
-                        <a href="${file.path}" target="_blank" download="${file.name}" class="action-btn">外链/下载</a>
-                        ${deleteBtnHTML}
-                    </div>
-                `;
-                listDiv.appendChild(itemDiv);
+                if(isShowFavoritesOnly && !meta[item.sha]?.isFav) return false;
+                return filename.includes(searchQuery);
             });
-
-            groupDiv.appendChild(listDiv);
-            vaultContent.appendChild(groupDiv);
+        } else {
+            // Folder view or Flat favorites view
+            if(isShowFavoritesOnly) {
+                 displayItems = fullTreeData.filter(item => item.type === 'blob' && meta[item.sha]?.isFav && !item.path.endsWith('.gitkeep'));
+            } else {
+                displayItems = fullTreeData.filter(item => {
+                    // Must start with currentPath
+                    if(!item.path.startsWith(currentPath)) return false;
+                    // Exclude self (if looking at a folder)
+                    if(item.path === currentPath || item.path + '/' === currentPath) return false;
+                    
+                    // Keep only direct children
+                    const relativePath = item.path.substring(currentPath.length);
+                    if(relativePath.indexOf('/') > -1) {
+                        return false; // it's nested deeper
+                    }
+                    
+                    // Don't show .gitkeep
+                    if(item.path.endsWith('.gitkeep')) return false;
+                    return true;
+                });
+            }
+        }
+        
+        // Sort: Folders first
+        displayItems.sort((a, b) => {
+            if (a.type === 'tree' && b.type === 'blob') return -1;
+            if (a.type === 'blob' && b.type === 'tree') return 1;
+            return 0; // fallback to API order
         });
 
+        if (displayItems.length === 0) {
+            vaultContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary); margin-top: 2rem;">没有找到相关的学习资料。</p>';
+        }
+
+        // Parent folder ".." link button
+        if(currentPath !== 'uploads/' && !searchQuery && !isShowFavoritesOnly) {
+            const upDiv = document.createElement('div');
+            upDiv.className = 'vault-item';
+            upDiv.style.cursor = 'pointer';
+            upDiv.innerHTML = `<div class="file-icon">📁</div><div class="file-info"><div class="file-name">返回上一级...</div></div>`;
+            upDiv.onclick = () => {
+                const parts = currentPath.split('/');
+                parts.pop(); // remove empty end
+                parts.pop(); // remove current
+                currentPath = parts.join('/') + '/';
+                updatePathBreadcrumb();
+                renderVault();
+            };
+            vaultContent.appendChild(upDiv);
+        }
+
+        const listDiv = document.createElement('div');
+        listDiv.className = 'vault-list';
+
+        displayItems.forEach(file => {
+            const pathParts = file.path.split('/');
+            const rawFilename = pathParts[pathParts.length - 1];
+            
+            if(file.type === 'tree') {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'vault-item';
+                itemDiv.style.cursor = 'pointer';
+                const deleteBtnHTML = hasToken ? `<button class="action-btn delete-folder-btn" data-path="${file.path}/">删除</button>` : '';
+                itemDiv.innerHTML = `
+                    <div class="file-icon">📁</div>
+                    <div class="file-info"><div class="file-name" style="font-weight: 600;">${rawFilename}</div></div>
+                    <div class="vault-actions">${deleteBtnHTML}</div>
+                `;
+                itemDiv.onclick = (e) => {
+                    if(e.target.classList.contains('delete-folder-btn')) {
+                       if(confirm(`确定删除目录 ${rawFilename} 及其全部内容？`)) {
+                           deleteFolder(file.path + '/');
+                       }
+                       return;
+                    }
+                    currentPath = file.path + '/';
+                    updatePathBreadcrumb();
+                    renderVault();
+                };
+                listDiv.appendChild(itemDiv);
+                return;
+            }
+
+            // RENDER FILE
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'vault-item';
+            
+            const parts = rawFilename.split('-');
+            let displayName = rawFilename;
+            if (parts.length > 1 && !isNaN(parts[0]) && parts[0].length === 13) {
+                displayName = parts.slice(1).join('-'); 
+            }
+            
+            const ext = displayName.substring(displayName.lastIndexOf('.'));
+            const cdnUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO}/${file.path}`;
+            const fileType = getFileType(ext);
+            
+            let iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>`;
+            let previewBtnHTML = '';
+            if (fileType === 'image') {
+                iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
+                previewBtnHTML = `<button class="action-btn preview-action" data-path="${cdnUrl}" data-type="image">预览</button>`;
+            } else if (fileType === 'video') {
+                iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>`;
+                previewBtnHTML = `<button class="action-btn preview-action" data-path="${cdnUrl}" data-type="video">预览</button>`;
+            } else if (fileType === 'pdf') {
+                iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
+                previewBtnHTML = `<button class="action-btn preview-action" data-path="${cdnUrl}" data-type="pdf">预览</button>`;
+            }
+            
+            const isFav = meta[file.sha]?.isFav;
+            const comment = meta[file.sha]?.comment;
+
+            const deleteBtnHTML = hasToken ? `<button class="action-btn delete-btn" data-path="${file.path}" data-sha="${file.sha}">删除</button>` : '';
+            
+            itemDiv.innerHTML = `
+                <div class="file-icon">${iconSvg}</div>
+                <div class="file-info">
+                    <div class="file-name" title="${displayName}">${displayName}</div>
+                    <div class="file-meta-row">${formatBytes(file.size)}</div>
+                    ${comment ? `<div class="annotation-row"><span class="annotation-text">📝 ${comment}</span></div>` : ''}
+                </div>
+                <div class="vault-actions" style="margin-top:0.25rem;">
+                    <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFav('${file.sha}')" title="添加或取消收藏">⭐</button>
+                    <button class="action-btn comment-btn" onclick="promptComment('${file.sha}')" title="编辑学习批注">💬</button>
+                    ${previewBtnHTML}
+                    <a href="${cdnUrl}" target="_blank" download="${displayName}" class="action-btn">下载</a>
+                    ${deleteBtnHTML}
+                </div>
+            `;
+            listDiv.appendChild(itemDiv);
+        });
+
+        vaultContent.appendChild(listDiv);
         attachVaultListeners();
     }
 
@@ -376,9 +566,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('.delete-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const filename = e.target.getAttribute('data-filename');
+                const path = e.target.getAttribute('data-path');
                 const sha = e.target.getAttribute('data-sha');
-                deleteFile(filename, sha);
+                deleteFile(path, sha);
             });
         });
     }
