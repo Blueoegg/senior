@@ -424,22 +424,31 @@ document.addEventListener('DOMContentLoaded', () => {
             for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                 const page = await pdf.getPage(pageNum);
                 const isMobile = window.innerWidth <= 768;
-                // dynamic scaling to fit container
-                const unscaledViewport = page.getViewport({ scale: 1.0 });
-                // Account for scrollbar width and padding
-                const desiredWidth = container.clientWidth - (isMobile ? 24 : 40);
-                const scale = desiredWidth / unscaledViewport.width;
-                // Limit scale up on very wide screens so it doesn't get ridiculously large
-                const finalScale = Math.min(scale, 1.5); 
                 
-                const viewport = page.getViewport({ scale: finalScale });
+                // Account for scrollbar width and padding
+                const unscaledViewport = page.getViewport({ scale: 1.0 });
+                const desiredWidth = container.clientWidth - (isMobile ? 24 : 40);
+                
+                // Calculate display CSS scale
+                const displayScale = Math.min(desiredWidth / unscaledViewport.width, 1.5); 
+                
+                // Get pixel ratio (handles high-DPI screens on Android/iOS natively)
+                const outputScale = window.devicePixelRatio || 1;
+                
+                // Calculate actual render scale (CSS Scale * physical pixel ratio)
+                const renderViewport = page.getViewport({ scale: displayScale * outputScale });
                 
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                canvas.style.maxWidth = '100%';
+                
+                // Set the physical canvas size (high resolution)
+                canvas.width = renderViewport.width;
+                canvas.height = renderViewport.height;
+                
+                // Set the visual CSS size (normal logical CSS pixels)
+                canvas.style.width = (renderViewport.width / outputScale) + 'px';
                 canvas.style.height = 'auto';
+                canvas.style.maxWidth = '100%';
                 canvas.style.display = 'block';
                 canvas.style.margin = '0 auto 15px auto';
                 canvas.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
@@ -450,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const renderContext = {
                     canvasContext: context,
-                    viewport: viewport
+                    viewport: renderViewport
                 };
                 await page.render(renderContext).promise;
             }
