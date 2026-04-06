@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // State
     let fullTreeData = [];
     let currentPath = 'uploads/'; // Root folder for files
-    let isShowFavoritesOnly = false;
+    let isShowTrafficOnly = false;
     let searchQuery = '';
 
     // --- Theme & Metadata Logic ---
@@ -64,10 +64,11 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.assign(meta[sha], updates);
         localStorage.setItem('QD_FILE_META', JSON.stringify(meta));
     }
-    window.toggleFav = function(sha) {
+    window.cycleTrafficLight = function(sha) {
         const meta = getMeta();
-        const isFav = meta[sha]?.isFav || false;
-        updateMeta(sha, { isFav: !isFav });
+        const status = meta[sha]?.traffic || 0;
+        let nextStatus = status === 3 ? 0 : status + 1;
+        updateMeta(sha, { traffic: nextStatus });
         renderVault();
     }
     window.promptComment = function(sha) {
@@ -89,9 +90,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(toggleFavoritesBtn) {
         toggleFavoritesBtn.addEventListener('click', () => {
-            isShowFavoritesOnly = !isShowFavoritesOnly;
-            toggleFavoritesBtn.style.opacity = isShowFavoritesOnly ? '1' : '0.5';
-            toggleFavoritesBtn.style.filter = isShowFavoritesOnly ? 'grayscale(0)' : 'grayscale(1)';
+            isShowTrafficOnly = !isShowTrafficOnly;
+            toggleFavoritesBtn.style.opacity = isShowTrafficOnly ? '1' : '0.5';
+            toggleFavoritesBtn.style.filter = isShowTrafficOnly ? 'grayscale(0)' : 'grayscale(1)';
             renderVault();
         });
     }
@@ -109,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentPath = 'uploads/';
             searchQuery = '';
             if(searchInput) searchInput.value = '';
-            isShowFavoritesOnly = false;
+            isShowTrafficOnly = false;
             if(toggleFavoritesBtn) {
                 toggleFavoritesBtn.style.opacity = '0.5';
                 toggleFavoritesBtn.style.filter = 'grayscale(1)';
@@ -470,18 +471,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (searchQuery) {
             displayItems = fullTreeData.filter(item => {
                 if(item.type !== 'blob') return false; 
-                // Don't show .gitkeep
                 if(item.path.endsWith('.gitkeep')) return false;
                 const pathParts = item.path.split('/');
                 const filename = pathParts[pathParts.length - 1].toLowerCase();
                 
-                if(isShowFavoritesOnly && !meta[item.sha]?.isFav) return false;
+                if(isShowTrafficOnly && (meta[item.sha]?.traffic !== 1 && meta[item.sha]?.traffic !== 2)) return false;
                 return filename.includes(searchQuery);
             });
         } else {
-            // Folder view or Flat favorites view
-            if(isShowFavoritesOnly) {
-                 displayItems = fullTreeData.filter(item => item.type === 'blob' && meta[item.sha]?.isFav && !item.path.endsWith('.gitkeep'));
+            // Folder view or Flat traffic view
+            if(isShowTrafficOnly) {
+                 displayItems = fullTreeData.filter(item => item.type === 'blob' && (meta[item.sha]?.traffic === 1 || meta[item.sha]?.traffic === 2) && !item.path.endsWith('.gitkeep'));
             } else {
                 displayItems = fullTreeData.filter(item => {
                     // Must start with currentPath
@@ -514,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Parent folder ".." link button
-        if(currentPath !== 'uploads/' && !searchQuery && !isShowFavoritesOnly) {
+        if(currentPath !== 'uploads/' && !searchQuery && !isShowTrafficOnly) {
             const upDiv = document.createElement('div');
             upDiv.className = 'vault-item';
             upDiv.style.cursor = 'pointer';
@@ -588,8 +588,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
                 previewBtnHTML = `<button class="action-btn preview-action" data-path="${cdnUrl}" data-type="pdf">预览</button>`;
             }
-            
-            const isFav = meta[file.sha]?.isFav;
+            const trafficIconMap = { 0: '⚪', 1: '🔴', 2: '🟡', 3: '🟢' };
+            const trafficLevel = meta[file.sha]?.traffic || 0;
             const comment = meta[file.sha]?.comment;
 
             const deleteBtnHTML = hasToken ? `<button class="action-btn delete-btn" data-path="${file.path}" data-sha="${file.sha}">删除</button>` : '';
@@ -602,7 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${comment ? `<div class="annotation-row"><span class="annotation-text">📝 ${comment}</span></div>` : ''}
                 </div>
                 <div class="vault-actions" style="margin-top:0.25rem;">
-                    <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFav('${file.sha}')" title="添加或取消收藏">⭐</button>
+                    <button class="fav-btn" onclick="cycleTrafficLight('${file.sha}')" title="错题标记(红/黄/绿)">${trafficIconMap[trafficLevel]}</button>
                     <button class="action-btn comment-btn" onclick="promptComment('${file.sha}')" title="编辑学习批注">💬</button>
                     ${previewBtnHTML}
                     <a href="${cdnUrl}" target="_blank" download="${displayName}" class="action-btn">下载</a>
@@ -634,10 +634,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let currentScratchCanvas = null;
+
     function openPreview(path, type) {
         previewContainer.innerHTML = '';
+        if(currentScratchCanvas) {
+            currentScratchCanvas.remove();
+            currentScratchCanvas = null;
+            document.getElementById('scratch-pad-btn')?.remove();
+        }
+
         if (type === 'image') {
             const img = document.createElement('img');
+            img.src = path;
+            previewContainer.appendChild(img);
+        } else if (type === 'video') {
+            const video = document.createElement('video');
+            video.src = path;
+            video.controls = true;
+            previewContainer.appendChild(video);
+        } else if (type === 'pdf') {
+            previewContainer.innerHTML = '<div id="pdf-viewer" style="width: 100%; height: 100%; overflow-y: auto; text-align: center; background: #333; border-radius: 8px; padding: 10px; box-sizing: border-box; -webkit-overflow-scrolling: touch;"></div>';
+            // ... (rest loaded below)
             img.src = path;
             previewContainer.appendChild(img);
         } else if (type === 'video') {
@@ -719,8 +737,122 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    closeModal.addEventListener('click', () => { previewModal.classList.remove('show'); previewContainer.innerHTML = ''; });
-    window.addEventListener('click', (e) => { if (e.target === previewModal) { previewModal.classList.remove('show'); previewContainer.innerHTML = ''; } });
+    // --- Finger Scratchpad Logic ---
+    function enableScratchpad() {
+        if(currentScratchCanvas) return;
+        const cvs = document.createElement('canvas');
+        cvs.style.position = 'absolute';
+        cvs.style.top = '0';
+        cvs.style.left = '0';
+        cvs.style.zIndex = '9998';
+        cvs.style.cursor = 'crosshair';
+        cvs.width = previewContainer.clientWidth;
+        cvs.height = previewContainer.clientHeight;
+        
+        previewContainer.style.position = 'relative';
+        previewContainer.appendChild(cvs);
+        currentScratchCanvas = cvs;
+
+        const ctx = cvs.getContext('2d');
+        ctx.strokeStyle = '#ef4444'; // Red pen
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        let drawing = false;
+
+        const getPos = (e) => {
+            const rect = cvs.getBoundingClientRect();
+            let clientX = e.clientX;
+            let clientY = e.clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            }
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        };
+
+        const startDraw = (e) => {
+            e.preventDefault(); drawing = true;
+            const pos = getPos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+        };
+        const draw = (e) => {
+            if(!drawing) return; e.preventDefault();
+            const pos = getPos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        };
+        const endDraw = () => { if(drawing) { drawing = false; ctx.closePath(); } };
+
+        cvs.addEventListener('mousedown', startDraw);
+        cvs.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', endDraw);
+        cvs.addEventListener('touchstart', startDraw, {passive: false});
+        cvs.addEventListener('touchmove', draw, {passive: false});
+        window.addEventListener('touchend', endDraw);
+    }
+
+    function removeScratchpad() {
+        if(currentScratchCanvas) {
+            currentScratchCanvas.remove();
+            currentScratchCanvas = null;
+        }
+    }
+
+    // Scratchpad UI Controls Mount
+    const previewModalObj = document.getElementById('preview-modal');
+    const scratchControls = document.createElement('div');
+    scratchControls.style.position = 'absolute';
+    scratchControls.style.bottom = '20px';
+    scratchControls.style.right = '20px';
+    scratchControls.style.zIndex = '9999';
+    scratchControls.style.display = 'flex';
+    scratchControls.style.gap = '10px';
+    scratchControls.innerHTML = `<button id="sp-toggle-btn" class="action-btn" style="background:var(--accent-1); color:#fff; padding:0.6rem 1rem; border-radius:30px; font-weight:bold; box-shadow:0 10px 20px rgba(0,0,0,0.3);">🖍️ 涂鸦草稿</button><button id="sp-clear-btn" class="action-btn" style="display:none; background:#ef4444; color:#fff; padding:0.6rem 1rem; border-radius:30px; box-shadow:0 10px 20px rgba(0,0,0,0.3);">🗑️ 清空</button>`;
+    previewModalObj.querySelector('.modal-content').appendChild(scratchControls);
+
+    document.getElementById('sp-toggle-btn').addEventListener('click', (e) => {
+        const btn = e.target;
+        if(!currentScratchCanvas) {
+            enableScratchpad();
+            btn.innerHTML = '❌ 结束涂鸦';
+            document.getElementById('sp-clear-btn').style.display = 'block';
+            previewContainer.style.overflow = 'hidden'; // Stop underlying scroll
+        } else {
+            removeScratchpad();
+            btn.innerHTML = '🖍️ 涂鸦草稿';
+            document.getElementById('sp-clear-btn').style.display = 'none';
+            previewContainer.style.overflow = 'auto'; // Restore scroll
+        }
+    });
+
+    document.getElementById('sp-clear-btn').addEventListener('click', () => {
+        if(currentScratchCanvas) {
+            const ctx = currentScratchCanvas.getContext('2d');
+            ctx.clearRect(0, 0, currentScratchCanvas.width, currentScratchCanvas.height);
+        }
+    });
+
+    closeModal.addEventListener('click', () => { 
+        previewModalObj.classList.remove('show'); 
+        previewContainer.innerHTML = ''; 
+        removeScratchpad();
+        document.getElementById('sp-toggle-btn').innerHTML = '🖍️ 涂鸦草稿';
+        document.getElementById('sp-clear-btn').style.display = 'none';
+        previewContainer.style.overflow = 'auto';
+    });
+    window.addEventListener('click', (e) => { 
+        if (e.target === previewModalObj) { 
+            previewModalObj.classList.remove('show'); 
+            previewContainer.innerHTML = ''; 
+            removeScratchpad();
+            document.getElementById('sp-toggle-btn').innerHTML = '🖍️ 涂鸦草稿';
+            document.getElementById('sp-clear-btn').style.display = 'none';
+            previewContainer.style.overflow = 'auto';
+        } 
+    });
 
     // --- Final Execution ---
     init();
